@@ -5,7 +5,6 @@ var bodyParser = require('body-parser');
 var bcrypt = require('bcrypt');
 
 var session = require('express-session');
-// var FileStore = require('session-file-store')(session);
 
 
 var db = require('./app/config');
@@ -37,7 +36,6 @@ app.use(session({
 }));
 
 var restrict = function (req, res, next) {
-  console.log('Got into our restrict function! Req.session.username is :', req.session.username);
   if (req.session.username) {
     next();
   } else {
@@ -47,7 +45,12 @@ var restrict = function (req, res, next) {
   }
 };
 
-
+var createSessionAndRedirect = function(req, res, username) {
+  req.session.regenerate(function() {
+    req.session.username = username;
+    res.redirect('/');
+  });
+};
 
 app.get('/', restrict,
 function(req, res) {
@@ -56,121 +59,103 @@ function(req, res) {
 
 app.get('/create', restrict,
 function(req, res) {
+  console.log("Here is a cookie from the create page", req.session );
   res.render('index');
 });
 
-app.get('/links', restrict,
-function(req, res) {
-  Links.reset().fetch().then(function(links) {
-    res.status(200).send(links.models);
-  });
-});
-
-app.post('/links', restrict,
-function(req, res) {
-  console.log('Got into our links post request function!');
-  var uri = req.body.url;
-
-  if (!util.isValidUrl(uri)) {
-    console.log('Not a valid url: ', uri);
-    return res.sendStatus(404);
-  }
-
-  new Link({ url: uri }).fetch().then(function(found) {
-    if (found) {
-      res.status(200).send(found.attributes);
-    } else {
-      util.getUrlTitle(uri, function(err, title) {
-        if (err) {
-          console.log('Error reading URL heading: ', err);
-          return res.sendStatus(404);
-        }
-
-        Links.create({
-          url: uri,
-          title: title,
-          baseUrl: req.headers.origin
-        })
-        .then(function(newLink) {
-          res.status(200).send(newLink);
-        });
+app.route('/links')
+  .get(restrict,
+    function(req, res) {
+      Links.reset().fetch().then(function(links) {
+        res.status(200).send(links.models);
       });
-    }
-  });
-});
+    })
+  .post(restrict,
+    function(req, res) {
+      console.log('Got into our links post request function!');
+      var uri = req.body.url;
+
+      if (!util.isValidUrl(uri)) {
+        console.log('Not a valid url: ', uri);
+        return res.sendStatus(404);
+      }
+
+      new Link({ url: uri }).fetch().then(function(found) {
+        if (found) {
+          res.status(200).send(found.attributes);
+        } else {
+          util.getUrlTitle(uri, function(err, title) {
+            if (err) {
+              console.log('Error reading URL heading: ', err);
+              return res.sendStatus(404);
+            }
+
+            Links.create({
+              url: uri,
+              title: title,
+              baseUrl: req.headers.origin
+            })
+            .then(function(newLink) {
+              res.status(200).send(newLink);
+            });
+          });
+        }
+      });
+    });
 
 /************************************************************/
 // Write your authentication routes here
 /************************************************************/
+app.route('/login')
+  .get(function(req, res) {
+    // After they log in, then begin a session
+    console.log('redirected from index');
+    res.render('login');
+  })
 
-app.get('/login', function(req, res) {
-  // After they log in, then begin a session
-  console.log('redirected from index');
-  res.render('login');
-});
+  .post(function(req, res) {
+    var username = req.body.username;
+    var password = req.body.password;
 
-app.post('/login', function(req, res) {
-  var username = req.body.username;
-  console.log('This is our username: ', username);
-  var password = req.body.password;
-
-  console.log('This is our password: ', password);
-
-  util.checkUsername(username, function(result) {
-    var salt = result.salt;
-    var hash = bcrypt.hashSync(password, salt);
-    console.log('This is our hash', hash);
-    console.log('Result from checkUserName', result);
-    util.checkPassword(result, hash, function(result) {
-      if (result === 'error') {
-        console.log('Redirected to Login after error checking password');
-        res.redirect('/login');
-      } else {
-        req.session.regenerate(function() {
-          req.session.username = username;
-          res.redirect('/');
-        });
-      }
+    util.checkUsername(username, function(result) {
+      var hash = bcrypt.hashSync(password, result.salt);
+      util.checkPassword(result, hash, function(result) {
+        if (result === 'error') {
+          console.log('Redirected to Login after error checking password');
+          res.redirect('/login');
+        } else {
+          createSessionAndRedirect(req, res, username);
+        }
+      });
     });
   });
-});
 
-app.get('/signup', function(req, res) {
-  res.render('signup');
-});
-
-app.post('/signup', function(req, res) {
-  var username = req.body.username;
-  var password = req.body.password;
-  var salt = bcrypt.genSaltSync(10);
-  var hash = bcrypt.hashSync(password, salt);
-  // Add username and password to our database
-  db.knex('users')
-    .insert({
+app.route('/signup')
+  .get(function(req, res) {
+    res.render('signup');
+  })
+  .post(function(req, res) {
+    var username = req.body.username;
+    var password = req.body.password;
+    var salt = bcrypt.genSaltSync(10);
+    var hash = bcrypt.hashSync(password, salt);
+    // Add username and password to our database
+    new User({  
       username: username,
       password: hash,
-      salt: salt
-    })
-    .then(function() {
-      console.log('Added to the database!');
-      req.session.regenerate(function() {
-        req.session.username = username;
-        res.redirect('/');
-      });      
-      
-    });
-
-});
-
-
+      salt: salt})
+      .save()
+      .then(function() {
+        console.log('Added to the database!');
+        createSessionAndRedirect(req, res, username);        
+      });
+  });
 
 app.get('/logout', function(req, res) {
   req.session.destroy(function() {
     res.redirect('/');
   });
 });
-
-
 
 /************************************************************/
 // Handle the wildcard route last - if all other routes fail

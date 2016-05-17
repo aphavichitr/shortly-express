@@ -30,6 +30,7 @@ db.knex.schema.hasTable('clicks').then(function(exists) {
       click.increments('id').primary();
       click.integer('linkId');
       click.timestamps();
+
     }).then(function (table) {
       console.log('Created Table', table);
     });
@@ -46,8 +47,8 @@ db.knex.schema.hasTable('users').then(function(exists) {
       user.string('username', 30);
       user.string('password', 30);
       user.string('salt', 10);
-      // user.integer('sessionID', '');
       user.timestamps();
+      // user.timestamp('created_at').notNullable().defaultTo(knex.raw('now()'));
     }).then(function (table) {
       console.log('Created Table', table);
     });

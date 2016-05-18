@@ -3,6 +3,8 @@ var util = require('./lib/utility');
 var partials = require('express-partials');
 var bodyParser = require('body-parser');
 var bcrypt = require('bcrypt');
+var passport = require('passport');
+var Strategy = require('passport-twitter').Strategy;
 
 var session = require('express-session');
 
@@ -13,6 +15,14 @@ var User = require('./app/models/user');
 var Links = require('./app/collections/links');
 var Link = require('./app/models/link');
 var Click = require('./app/models/click');
+
+passport.serializeUser(function(user, cb) {
+  cb(null, user);
+});
+
+passport.deserializeUser(function(obj, cb) {
+  cb(null, obj);
+});
 
 var app = express();
 
@@ -35,8 +45,25 @@ app.use(session({
   resave: true
 }));
 
+passport.use(new Strategy({
+  consumerKey: 'F0on65Nb67MCh28CGzfuimzU3',
+  consumerSecret: '6qxunYIjRZgnVywg1o53VeAcaQvibpiS6Vf7TrxbAScQx7jmRk',
+  callbackURL: 'http://127.0.0.1:4568/login/twitter/return'},
+  function(token, tokenSecret, profile, cb) {
+    //User.findOrCreate({username, profile.id}, function(err, user) {
+    console.log('This is the from twitter profile', profile);
+    console.log('This is the callback that is being passed in', cb);
+    return cb(null, profile);
+    //}  
+  })
+);
+
+app.use(passport.initialize());
+app.use(passport.session());
+
+
 var restrict = function (req, res, next) {
-  if (req.session.username) {
+  if (req.session.username || (req.user && req.user.username)) {
     next();
   } else {
     req.session.error = 'Access denied!';
@@ -47,10 +74,17 @@ var restrict = function (req, res, next) {
 
 var createSessionAndRedirect = function(req, res, username) {
   req.session.regenerate(function() {
+    //console.log('before request: ', req);
+    //console.log('before response: ', res);
     req.session.username = username;
+    //console.log('request:',req);
+    console.log('response:', res.req.res.req.res.req); 
     res.redirect('/');
   });
 };
+
+// NOTE: Might need to serialize
+
 
 app.get('/', restrict,
 function(req, res) {
@@ -84,6 +118,7 @@ app.route('/links')
         if (found) {
           res.status(200).send(found.attributes);
         } else {
+          console.log('Link not found in DB');
           util.getUrlTitle(uri, function(err, title) {
             if (err) {
               console.log('Error reading URL heading: ', err);
@@ -130,6 +165,18 @@ app.route('/login')
     });
   });
 
+app.get('/login/twitter',
+  passport.authenticate('twitter'));
+
+app.get('/login/twitter/return', 
+  passport.authenticate('twitter', { failureRedirect: '/login' }),
+  function(req, res) {
+    console.log('twitter login successful');
+    // createSessionAndRedirect(req, res, username);
+    res.redirect('/');
+  });
+
+
 app.route('/signup')
   .get(function(req, res) {
     res.render('signup');
@@ -147,7 +194,7 @@ app.route('/signup')
       .save()
       .then(function() {
         console.log('Added to the database!');
-        createSessionAndRedirect(req, res, username);        
+        createSessionAndRedirect(req, res, username);       
       });
   });
 
@@ -168,16 +215,30 @@ app.get('/*', function(req, res) {
     if (!link) {
       res.redirect('/');
     } else {
-      var click = new Click({
-        linkId: link.get('id')
-      });
-
-      click.save().then(function() {
-        link.set('visits', link.get('visits') + 1);
-        link.save().then(function() {
+      var username = req.session.username || req.user.username; // Might get error.
+      // console.log('This is supposed to be userID: ', result);
+      var clickObj = {};
+      clickObj.linkId = link.get('id');      
+      db.knex('users')
+        .where('username', '=', username)
+        .then(function(result) {
+          clickObj.usersId = result[0].id;
+          return clickObj;
+        })
+        .then(function(clickObj) {
+          console.log('click obj', clickObj);
+          new Click(clickObj)
+          .save()
+          .then(function(clickPromise) {
+            console.log(clickPromise);
+            clickPromise.set('visits', clickPromise.get('visits') + 1);
+            console.log(clickPromise);
+            clickPromise.save();
+          });
+        })
+        .then(function() {
           return res.redirect(link.get('url'));
         });
-      });
     }
   });
 });

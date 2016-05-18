@@ -16,7 +16,7 @@ db.knex.schema.hasTable('urls').then(function(exists) {
       link.string('baseUrl', 255);
       link.string('code', 100);
       link.string('title', 255);
-      link.integer('visits');
+      //link.integer('visits');
       link.timestamps();
     }).then(function (table) {
       console.log('Created Table', table);
@@ -28,7 +28,10 @@ db.knex.schema.hasTable('clicks').then(function(exists) {
   if (!exists) {
     db.knex.schema.createTable('clicks', function (click) {
       click.increments('id').primary();
-      click.integer('linkId');
+      // click.integer('linkId');
+      click.integer('usersId').unsigned().references('users.id');
+      click.integer('linkId').unsigned().references('urls.id');
+      click.integer('visits');
       click.timestamps();
 
     }).then(function (table) {
@@ -48,12 +51,24 @@ db.knex.schema.hasTable('users').then(function(exists) {
       user.string('password', 30);
       user.string('salt', 10);
       user.timestamps();
-      // user.timestamp('created_at').notNullable().defaultTo(knex.raw('now()'));
     }).then(function (table) {
       console.log('Created Table', table);
     });
   }
 });
+
+// db.knex.schema.hasTable('linkuser').then(function(exists) {
+//   if (!exists) {
+//     db.knex.schema.createTable('linkuser', function(linkuser) {
+//       linkuser.increments('id').primary();
+//       linkuser.integer('users_id').unsigned().references('users.id');
+//       linkuser.integer('urls_id').unsigned().references('urls.id');
+//       linkuser.integer('visits');
+//     }).then(function (table) {
+//       console.log('Created Table', table);
+//     });
+//   }
+// });
 
 
 module.exports = db;
